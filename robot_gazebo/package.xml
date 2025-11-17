@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>robot_gazebo</name>
+  <version>1.0.0</version>
+  <description>ROS2 package for virtual robot with camera and LIDAR in Gazebo</description>
+  <maintainer email="user@example.com">User</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>gazebo_ros</depend>
+  <depend>gazebo_ros_pkgs</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>joint_state_publisher</depend>
+  <depend>xacro</depend>
+
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-pillow</exec_depend>
+  <exec_depend>python3-torch</exec_depend>
+  <exec_depend>python3-torchvision</exec_depend>
+  <exec_depend>python3-kafka-python</exec_depend>
+  <exec_depend>python3-plotly</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
