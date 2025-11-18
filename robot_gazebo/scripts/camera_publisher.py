@@ -70,7 +70,7 @@ class CameraPublisher(Node):
         # Only generate dummy if we haven't received Gazebo images recently
         if not self.gazebo_image_received:
             if not self.warning_logged:
-                self.get_logger().warn('No Gazebo camera data received, generating dummy images')
+                self.get_logger().warning('No Gazebo camera data received, generating dummy images')
                 self.warning_logged = True
             self.generate_dummy_image()
         

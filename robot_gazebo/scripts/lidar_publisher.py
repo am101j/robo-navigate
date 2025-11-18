@@ -45,7 +45,8 @@ class LidarPublisher(Node):
     def timer_callback(self):
         """Check if we're receiving LIDAR data"""
         if not self.gazebo_lidar_received:
-            self.get_logger().warn_once('No Gazebo LIDAR data received, check if Gazebo is running with LIDAR plugin')
+            # Use standard warning logger; warn_once is not provided by rclpy logger
+            self.get_logger().warning('No Gazebo LIDAR data received, check if Gazebo is running with LIDAR plugin')
         
         self.gazebo_lidar_received = False
 

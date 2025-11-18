@@ -1,0 +1,19 @@
+# Minimal Python requirements to run object detection and visualization
+# Install in a ROS2-enabled Python environment (preferably Linux)
+
+# Core ML / vision
+torch
+torchvision
+pillow
+opencv-python
+
+# ROS-related helpers (if running outside colcon/ROS packages)
+numpy
+
+# Optional extras
+kafka-python
+plotly
+
+# Note: For ROS2 integration you also need system packages and ROS Python packages:
+# - rclpy, sensor_msgs, std_msgs, cv_bridge (provided by ROS2 packages)
+# Install with apt/rosdep in a ROS2 workspace as appropriate.

@@ -4,20 +4,19 @@ Complete launch file to start Gazebo and spawn the virtual robot
 """
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
-from launch.conditions import IfCondition
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, Command
+from launch.substitutions import LaunchConfiguration, Command
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
-from launch_ros.substitutions import FindPackageShare
+from ament_index_python.packages import get_package_share_directory
 import os
 
 
 def generate_launch_description():
     # Package directories
-    pkg_share = FindPackageShare(package='robot_gazebo').find('robot_gazebo')
-    gazebo_ros_share = FindPackageShare(package='gazebo_ros').find('gazebo_ros')
+    pkg_share = get_package_share_directory('robot_gazebo')
+    gazebo_ros_share = get_package_share_directory('gazebo_ros')
     
     # URDF file path
     urdf_file = os.path.join(pkg_share, 'urdf', 'robot.urdf.xacro')
@@ -39,22 +38,13 @@ def generate_launch_description():
         description='Path to world file (optional)'
     )
     
-    # Start Gazebo server
-    gazebo_server = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([gazebo_ros_share, 'launch', 'gzserver.launch.py'])
-        ]),
+    # Start Gazebo with proper ROS integration
+    gazebo = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(gazebo_ros_share, 'launch', 'gazebo.launch.py')),
         launch_arguments={
             'world': world_file,
             'verbose': 'true'
         }.items()
-    )
-    
-    # Start Gazebo client
-    gazebo_client = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([gazebo_ros_share, 'launch', 'gzclient.launch.py'])
-        ])
     )
     
     # Process URDF with xacro
@@ -81,30 +71,53 @@ def generate_launch_description():
         executable='spawn_entity.py',
         arguments=[
             '-entity', 'virtual_robot',
-            '-topic', 'robot_description',
+            # Read the robot description from the ROS parameter set by robot_state_publisher
+            '-param', 'robot_description',
             '-x', '0.0',
             '-y', '0.0',
-            '-z', '0.1'
+            '-z', '0.2'
         ],
         output='screen'
     )
     
-    # Camera Publisher Node
-    camera_publisher_node = Node(
-        package='robot_gazebo',
-        executable='camera_publisher.py',
-        name='camera_publisher',
-        output='screen'
-    )
+    # --- Your Custom Application Nodes ---
     
-    # LIDAR Publisher Node
-    lidar_publisher_node = Node(
+    # C++ LIDAR Obstacle Detector
+    lidar_detector_node = Node(
         package='robot_gazebo',
-        executable='lidar_publisher.py',
-        name='lidar_publisher',
-        output='screen'
+        executable='lidar_obstacle_detector',
+        name='lidar_obstacle_detector',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}]
     )
-    
+
+    # Python Robot Controller
+    robot_controller_node = Node(
+        package='robot_gazebo',
+        executable='robot_controller.py',
+        name='robot_controller',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
+    # Python Obstacle Avoidance
+    obstacle_avoidance_node = Node(
+        package='robot_gazebo',
+        executable='obstacle_avoidance.py',
+        name='obstacle_avoidance',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
+    # Python Object Detector
+    object_detector_node = Node(
+        package='robot_gazebo',
+        executable='object_detector.py',
+        name='object_detector',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
     # Create launch description
     ld = LaunchDescription()
     
@@ -113,13 +126,28 @@ def generate_launch_description():
     ld.add_action(declare_world_file_cmd)
     
     # Start Gazebo first
-    ld.add_action(gazebo_server)
-    ld.add_action(gazebo_client)
+    ld.add_action(gazebo)
     
-    # Add robot nodes
+    # Start robot state publisher immediately
     ld.add_action(robot_state_publisher_node)
-    ld.add_action(spawn_entity_node)
-    ld.add_action(camera_publisher_node)
-    ld.add_action(lidar_publisher_node)
+    
+    # Delay spawn entity to ensure Gazebo is ready (4 seconds) and spawn slightly higher
+    # to avoid the model intersecting the ground on spawn.
+    spawn_entity_node.arguments[spawn_entity_node.arguments.index('-z') + 1] = '0.5'
+    ld.add_action(TimerAction(
+        period=4.0,
+        actions=[spawn_entity_node]
+    ))
+
+    # Delay application nodes to ensure robot is spawned and stable (6 seconds)
+    ld.add_action(TimerAction(
+        period=6.0,
+        actions=[
+            lidar_detector_node,
+            robot_controller_node,
+            obstacle_avoidance_node,
+            object_detector_node
+        ]
+    ))
     
     return ld

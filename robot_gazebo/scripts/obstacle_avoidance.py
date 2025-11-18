@@ -25,8 +25,8 @@ class ObstacleAvoidance(Node):
         # Declare parameters
         self.declare_parameter('max_linear_velocity', 0.5)  # m/s
         self.declare_parameter('max_angular_velocity', 1.0)  # rad/s
-        self.declare_parameter('safety_distance', 1.0)  # m
-        self.declare_parameter('obstacle_influence_radius', 2.0)  # m
+        self.declare_parameter('safety_distance', 0.2)  # m
+        self.declare_parameter('obstacle_influence_radius', 0.8)  # m
         self.declare_parameter('camera_detection_weight', 0.3)
         self.declare_parameter('lidar_detection_weight', 0.7)
         self.declare_parameter('goal_x', 10.0)  # Goal position
@@ -140,7 +140,7 @@ class ObstacleAvoidance(Node):
                         self.camera_objects.append(camera_obj)
                         self.get_logger().debug(f'Camera detected {class_name} with confidence {confidence:.2f}')
         except json.JSONDecodeError as e:
-            self.get_logger().warn(f'Failed to parse camera detections: {e}')
+            self.get_logger().warning(f'Failed to parse camera detections: {e}')
     
     def control_loop(self):
         """Main control loop - computes and publishes velocity commands"""
@@ -148,7 +148,7 @@ class ObstacleAvoidance(Node):
         current_time = time.time()
         if (current_time - self.last_lidar_update > self.data_timeout and 
             current_time - self.last_camera_update > self.data_timeout):
-            self.get_logger().warn('No recent sensor data, stopping robot')
+            self.get_logger().warning('No recent sensor data, stopping robot')
             self.publish_velocity(0.0, 0.0)
             return
         
@@ -170,99 +170,30 @@ class ObstacleAvoidance(Node):
     
     def compute_velocity_command(self) -> tuple:
         """
-        Compute velocity command using potential field method
+        Simple obstacle avoidance - move forward, turn when obstacle detected
         
         Returns:
             tuple: (linear_velocity, angular_velocity)
         """
-        # Attractive force toward goal
-        goal_dx = self.goal_x - self.robot_x
-        goal_dy = self.goal_y - self.robot_y
-        goal_distance = math.sqrt(goal_dx**2 + goal_dy**2)
+        # Default: move forward
+        linear_vel = self.max_linear_vel * 0.3  # Slower speed
+        angular_vel = 0.0
         
-        if goal_distance > 0.01:
-            goal_angle = math.atan2(goal_dy, goal_dx)
-            # Attractive force magnitude (increases with distance)
-            attractive_force = min(goal_distance * 0.2, self.max_linear_vel)
-        else:
-            goal_angle = 0.0
-            attractive_force = 0.0
-        
-        # Repulsive forces from obstacles
-        repulsive_force_x = 0.0
-        repulsive_force_y = 0.0
-        
-        # Process LIDAR obstacles
+        # Check for obstacles in front (front 90 degrees)
+        front_obstacles = []
         for obstacle in list(self.obstacles):
-            obs_x = obstacle['x']
-            obs_y = obstacle['y']
-            distance = obstacle['distance']
-            
-            if distance < self.safety_distance:
-                # Strong repulsion if too close
-                repulsion_magnitude = self.lidar_weight * (self.safety_distance - distance) / self.safety_distance
-                repulsion_magnitude = min(repulsion_magnitude, self.max_linear_vel)
-                
-                # Repulsion direction (away from obstacle)
-                if distance > 0.01:
-                    repulsion_angle = math.atan2(obs_y, obs_x) + math.pi
-                    repulsive_force_x += repulsion_magnitude * math.cos(repulsion_angle)
-                    repulsive_force_y += repulsion_magnitude * math.sin(repulsion_angle)
+            obs_angle = math.atan2(obstacle['y'], obstacle['x'])
+            # Check if obstacle is in front (within 45 degrees of forward)
+            if abs(obs_angle) < math.pi/4 and obstacle['distance'] < self.safety_distance * 2:
+                front_obstacles.append(obstacle)
         
-        # Process camera detections (simplified - treat as obstacles ahead)
-        for camera_obj in list(self.camera_objects):
-            # Camera typically sees obstacles in front
-            # Simplified: add repulsive force forward
-            estimated_dist = camera_obj.get('estimated_distance', 3.0)
-            if estimated_dist < self.safety_distance * 2:
-                repulsion_magnitude = self.camera_weight * (self.safety_distance * 2 - estimated_dist) / (self.safety_distance * 2)
-                repulsion_magnitude = min(repulsion_magnitude, self.max_linear_vel * 0.5)
-                # Repulsion forward (camera typically faces forward)
-                repulsive_force_x += repulsion_magnitude
-        
-        # Combine attractive and repulsive forces
-        total_force_x = attractive_force * math.cos(goal_angle) + repulsive_force_x
-        total_force_y = attractive_force * math.sin(goal_angle) + repulsive_force_y
-        
-        # Convert to velocity commands
-        desired_angle = math.atan2(total_force_y, total_force_x)
-        desired_speed = math.sqrt(total_force_x**2 + total_force_y**2)
-        
-        # Limit speeds
-        linear_vel = min(desired_speed, self.max_linear_vel)
-        
-        # Compute angular velocity to align with desired direction
-        angle_error = desired_angle - self.robot_theta
-        # Normalize angle to [-pi, pi]
-        while angle_error > math.pi:
-            angle_error -= 2 * math.pi
-        while angle_error < -math.pi:
-            angle_error += 2 * math.pi
-        
-        # Proportional control for angular velocity
-        angular_vel = angle_error * 2.0  # Proportional gain
-        angular_vel = max(-self.max_angular_vel, min(self.max_angular_vel, angular_vel))
-        
-        # If obstacle too close, prioritize turning away
-        min_obstacle_dist = min([obs['distance'] for obs in self.obstacles], default=float('inf'))
-        if min_obstacle_dist < self.safety_distance * 0.5:
-            # Emergency: turn away from closest obstacle
-            if len(self.obstacles) > 0:
-                closest = min(self.obstacles, key=lambda o: o['distance'])
-                avoidance_angle = math.atan2(closest['y'], closest['x']) + math.pi
-                angle_error = avoidance_angle - self.robot_theta
-                while angle_error > math.pi:
-                    angle_error -= 2 * math.pi
-                while angle_error < -math.pi:
-                    angle_error += 2 * math.pi
-                angular_vel = angle_error * 3.0  # Higher gain for emergency
-                angular_vel = max(-self.max_angular_vel, min(self.max_angular_vel, angular_vel))
-                linear_vel = 0.1  # Slow down when obstacle very close
-        
-        self.get_logger().debug(
-            f'Command: linear={linear_vel:.2f} m/s, angular={angular_vel:.2f} rad/s, '
-            f'goal_dist={math.sqrt((self.goal_x - self.robot_x)**2 + (self.goal_y - self.robot_y)**2):.2f}m'
-        )
+        # If obstacle detected in front, turn
+        if front_obstacles:
+            linear_vel = 0.0  # Stop
+            angular_vel = self.max_angular_vel * 0.5  # Turn right
+            self.get_logger().info(f'Obstacle detected! Turning. Distance: {min(obs["distance"] for obs in front_obstacles):.2f}m')
+        else:
+            self.get_logger().debug('Path clear, moving forward')
         
         return linear_vel, angular_vel
     

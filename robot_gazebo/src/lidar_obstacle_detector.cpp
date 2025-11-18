@@ -28,7 +28,8 @@ public:
         // Initialize parameters
         this->declare_parameter<double>("min_range", 0.1);
         this->declare_parameter<double>("max_range", 10.0);
-        this->declare_parameter<double>("obstacle_threshold", 0.5);
+        // Detect obstacles up to 2.0 m by default to give the controller time to react
+        this->declare_parameter<double>("obstacle_threshold", 2.0);
         this->declare_parameter<int>("num_processing_threads", num_threads_);
         
         min_range_ = this->get_parameter("min_range").as_double();
@@ -310,6 +311,7 @@ int main(int argc, char * argv[])
     rclcpp::shutdown();
     return 0;
 }
+
 
 
 

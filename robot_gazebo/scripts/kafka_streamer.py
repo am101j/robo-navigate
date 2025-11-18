@@ -82,7 +82,7 @@ class KafkaStreamer(Node):
             self.get_logger().info(f'LIDAR topic: {self.lidar_topic}')
         except Exception as e:
             self.get_logger().error(f'Failed to initialize Kafka producer: {str(e)}')
-            self.get_logger().warn('Node will continue but messages will not be streamed to Kafka')
+            self.get_logger().warning('Node will continue but messages will not be streamed to Kafka')
             self.kafka_connected = False
         
         # Statistics
@@ -211,7 +211,7 @@ class KafkaStreamer(Node):
         
         # Check if it's a connection error
         if isinstance(exception, (KafkaError, KafkaTimeoutError)):
-            self.get_logger().warn('Kafka connection error detected')
+            self.get_logger().warning('Kafka connection error detected')
             self.kafka_connected = False
             self.connection_retries += 1
             
@@ -265,7 +265,7 @@ class KafkaStreamer(Node):
                 f'{self.lidar_messages_failed} failed'
             )
         else:
-            self.get_logger().warn('Kafka not connected - messages are not being streamed')
+            self.get_logger().warning('Kafka not connected - messages are not being streamed')
     
     def destroy_node(self):
         """Cleanup on node destruction"""

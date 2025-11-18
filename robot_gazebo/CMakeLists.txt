@@ -39,13 +39,11 @@ install(TARGETS
 
 # Install Python modules
 install(PROGRAMS
-  src/robot_gazebo/camera_publisher.py
-  src/robot_gazebo/lidar_publisher.py
-  src/robot_gazebo/robot_controller.py
-  src/robot_gazebo/object_detector.py
-  src/robot_gazebo/kafka_streamer.py
-  src/robot_gazebo/kafka_visualizer.py
-  src/robot_gazebo/obstacle_avoidance.py
+  scripts/robot_controller.py
+  scripts/object_detector.py
+  scripts/kafka_streamer.py
+  scripts/kafka_visualizer.py
+  scripts/obstacle_avoidance.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -74,4 +72,3 @@ if(BUILD_TESTING)
 endif()
 
 ament_package()
-

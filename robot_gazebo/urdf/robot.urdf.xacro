@@ -160,6 +160,14 @@
       <geometry>
         <cylinder radius="0.1" length="0.05"/>
       </geometry>
+      <surface>
+        <friction>
+          <ode>
+            <mu>1.0</mu>
+            <mu2>1.0</mu2>
+          </ode>
+        </friction>
+      </surface>
     </collision>
     <inertial>
       <mass value="0.5"/>
@@ -181,6 +189,14 @@
       <geometry>
         <cylinder radius="0.1" length="0.05"/>
       </geometry>
+      <surface>
+        <friction>
+          <ode>
+            <mu>1.0</mu>
+            <mu2>1.0</mu2>
+          </ode>
+        </friction>
+      </surface>
     </collision>
     <inertial>
       <mass value="0.5"/>
@@ -207,9 +223,7 @@
   <!-- Differential Drive Plugin -->
   <gazebo>
     <plugin name="differential_drive_controller" filename="libgazebo_ros_diff_drive.so">
-      <ros>
-        <namespace>/</namespace>
-      </ros>
+      <update_rate>30</update_rate>
       <left_joint>left_wheel_joint</left_joint>
       <right_joint>right_wheel_joint</right_joint>
       <wheel_separation>0.35</wheel_separation>
@@ -226,12 +240,4 @@
     </plugin>
   </gazebo>
 
-  <!-- Gazebo Material -->
-  <gazebo>
-    <material>Gazebo/Blue</material>
-  </gazebo>
-
 </robot>
-
-
-

@@ -11,14 +11,46 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import String
 import json
 import numpy as np
-from PIL import Image as PILImage
 import io
-import torch
-import torchvision.transforms as transforms
-from torchvision.models.detection import fasterrcnn_resnet50_fpn
-from torchvision.models.detection.faster_rcnn import FasterRCNN_ResNet50_FPN_Weights
-import cv2
-from cv_bridge import CvBridge
+
+# Optional heavy imports — wrap them so node can run in environments without them
+TORCH_AVAILABLE = True
+PIL_AVAILABLE = True
+CVBRIDGE_AVAILABLE = True
+OPENCV_AVAILABLE = True
+TORCHVISION_WEIGHTS_AVAILABLE = True
+
+try:
+    from PIL import Image as PILImage
+except Exception:
+    PIL_AVAILABLE = False
+
+try:
+    import torch
+except Exception:
+    TORCH_AVAILABLE = False
+
+try:
+    import torchvision.transforms as transforms
+    from torchvision.models.detection import fasterrcnn_resnet50_fpn
+    # Weighs API may not be available on older torchvision versions
+    try:
+        from torchvision.models.detection.faster_rcnn import FasterRCNN_ResNet50_FPN_Weights
+    except Exception:
+        TORCHVISION_WEIGHTS_AVAILABLE = False
+except Exception:
+    TORCH_AVAILABLE = False
+    TORCHVISION_WEIGHTS_AVAILABLE = False
+
+try:
+    import cv2
+except Exception:
+    OPENCV_AVAILABLE = False
+
+try:
+    from cv_bridge import CvBridge
+except Exception:
+    CVBRIDGE_AVAILABLE = False
 
 
 class ObjectDetector(Node):
@@ -27,25 +59,38 @@ class ObjectDetector(Node):
     def __init__(self):
         super().__init__('object_detector')
         
-        # Initialize CV bridge for image conversion
-        self.bridge = CvBridge()
-        
-        # GPU setup
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.get_logger().info(f'Using device: {self.device}')
-        
-        if not torch.cuda.is_available():
-            self.get_logger().warn('CUDA not available, using CPU. Detection will be slower.')
-        
-        # Load detection model
+        # Initialize CV bridge for image conversion (if available)
+        if CVBRIDGE_AVAILABLE:
+            self.bridge = CvBridge()
+        else:
+            self.bridge = None
+            self.get_logger().warning('cv_bridge not available — will use dummy detections')
+
+        # GPU/CPU setup
+        if TORCH_AVAILABLE:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            self.get_logger().info(f'Using device: {self.device}')
+            if not torch.cuda.is_available():
+                self.get_logger().warning('CUDA not available, using CPU. Detection will be slower.')
+        else:
+            self.device = None
+            self.get_logger().warning('PyTorch not available — object detection will use dummy detections')
+
+        # Load detection model if possible
         self.model = None
         self.model_loaded = False
-        self.load_model()
-        
-        # Image preprocessing
-        self.transform = transforms.Compose([
-            transforms.ToTensor()
-        ])
+        if TORCH_AVAILABLE and PIL_AVAILABLE and TORCHVISION_WEIGHTS_AVAILABLE:
+            self.load_model()
+        else:
+            # If torchvision weights API not available, we may still try a simpler load in load_model
+            if TORCH_AVAILABLE and PIL_AVAILABLE:
+                self.load_model()
+
+        # Image preprocessing (fallback simple transform)
+        try:
+            self.transform = transforms.Compose([transforms.ToTensor()]) if TORCH_AVAILABLE else None
+        except Exception:
+            self.transform = None
         
         # COCO class names (for Faster R-CNN)
         self.coco_classes = [
@@ -88,26 +133,55 @@ class ObjectDetector(Node):
         
     def load_model(self):
         """Load the object detection model"""
+        if not TORCH_AVAILABLE:
+            self.get_logger().warning('Cannot load model: PyTorch not available')
+            self.model_loaded = False
+            return
+
         try:
             self.get_logger().info('Loading Faster R-CNN model...')
-            # Load pre-trained Faster R-CNN model
-            weights = FasterRCNN_ResNet50_FPN_Weights.DEFAULT
-            self.model = fasterrcnn_resnet50_fpn(weights=weights)
-            self.model.to(self.device)
-            self.model.eval()  # Set to evaluation mode
+            if TORCHVISION_WEIGHTS_AVAILABLE:
+                weights = FasterRCNN_ResNet50_FPN_Weights.DEFAULT
+                self.model = fasterrcnn_resnet50_fpn(weights=weights)
+                # Use the preprocessing transforms recommended by the weights
+                try:
+                    self.transform = weights.transforms()
+                except Exception:
+                    pass
+            else:
+                # Fallback for older torchvision versions
+                self.model = fasterrcnn_resnet50_fpn(pretrained=True)
+
+            if self.device is not None:
+                self.model.to(self.device)
+            self.model.eval()
             self.model_loaded = True
             self.get_logger().info('Model loaded successfully')
         except Exception as e:
             self.get_logger().error(f'Failed to load model: {str(e)}')
-            self.get_logger().warn('Using dummy model for demonstration')
+            self.get_logger().warning('Using dummy detections')
             self.model_loaded = False
+        finally:
+            # Ensure we have some transform available if model load succeeded partially
+            try:
+                if self.transform is None and TORCH_AVAILABLE:
+                    import torchvision.transforms as transforms
+                    self.transform = transforms.Compose([transforms.ToTensor()])
+            except Exception:
+                self.transform = None
     
     def image_callback(self, msg):
         """Callback function for incoming camera images"""
         try:
-            # Convert ROS Image message to OpenCV format
-            cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
-            
+            # Convert ROS Image message to OpenCV format if possible
+            if self.bridge is not None:
+                cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='rgb8')
+            else:
+                # If bridge not available, create a dummy image for detection
+                width = getattr(msg, 'width', 640)
+                height = getattr(msg, 'height', 480)
+                cv_image = np.zeros((height, width, 3), dtype=np.uint8)
+
             # Perform object detection
             detections = self.detect_objects(cv_image)
             
@@ -131,8 +205,8 @@ class ObjectDetector(Node):
         Returns:
             list: List of detection dictionaries
         """
-        if not self.model_loaded:
-            # Return dummy detections if model not loaded
+        if not self.model_loaded or not TORCH_AVAILABLE or not PIL_AVAILABLE or self.transform is None:
+            # Return dummy detections if model or dependencies not available
             return self.dummy_detection(image)
         
         try:
